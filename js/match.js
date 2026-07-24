@@ -12,6 +12,8 @@
    ============================================================ */
 const Match = (() => {
   let settings = null;
+  let myName = "Player";
+  let oppName = "Opponent";
   let baseSeed = 0;
   let round = 0;
   let myWins = 0, oppWins = 0;
@@ -46,6 +48,7 @@ const Match = (() => {
     $("overlay-round").hidden = true;
     $("overlay-end").hidden = true;
     $("round-label").textContent = `ROUND ${round}`;
+    $("opp-name").textContent = oppName;
     $("opp-score").textContent = "0";
     $("opp-status").innerHTML = `<span class="dot live"></span> playing`;
     $("my-score").textContent = "0";
@@ -95,7 +98,7 @@ const Match = (() => {
 
     let title;
     if (myFinal > oppFinal) { myWins++; title = "You take the round! 🎉"; }
-    else if (oppFinal > myFinal) { oppWins++; title = "Opponent takes the round"; }
+    else if (oppFinal > myFinal) { oppWins++; title = `${oppName} takes the round`; }
     else { title = "Round tied — no point"; }
 
     updateMatchScoreUI();
@@ -110,7 +113,7 @@ const Match = (() => {
     $("round-result-title").textContent = title;
     $("rr-me").textContent = myFinal;
     $("rr-opp").textContent = oppFinal;
-    $("rr-opp-name").textContent = "Them";
+    $("rr-opp-name").textContent = oppName;
     $("rr-match").textContent = `Match: ${myWins} – ${oppWins} (first to ${settings.winsNeeded})`;
     $("overlay-round").hidden = false;
 
@@ -142,9 +145,15 @@ const Match = (() => {
   /* ---------- incoming messages ---------- */
   function onMessage(msg) {
     switch (msg.type) {
-      case "hello": // joiner receives settings
+      case "hello": // joiner receives settings + host name
         settings = msg.settings;
-        UI.showRoomAsJoiner(settings);
+        if (msg.name) oppName = msg.name;
+        Net.send({ type: "hi", name: myName }); // introduce ourselves back
+        UI.showRoomAsJoiner(settings, oppName);
+        break;
+
+      case "hi": // host receives joiner's name
+        if (msg.name) oppName = msg.name;
         break;
 
       case "round_start": // joiner starts the round
@@ -198,11 +207,14 @@ const Match = (() => {
       beginMatch();
     },
 
-    /* host sends settings right after the joiner connects */
-    hostHello(chosenSettings) {
+    /* host sends settings + name right after the joiner connects */
+    hostHello(chosenSettings, name) {
       settings = chosenSettings;
-      Net.send({ type: "hello", settings });
+      myName = name || "Player";
+      Net.send({ type: "hello", settings, name: myName });
     },
+
+    setMyName(name) { myName = name || "Player"; },
 
     requestRematch() {
       rematchMe = true;

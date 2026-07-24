@@ -40,8 +40,8 @@ const UI = (() => {
     showScreen,
     renderSettingsList,
     renderRoomCode,
-    showRoomAsJoiner(settings) {
-      $("room-title").textContent = "Joined room";
+    showRoomAsJoiner(settings, hostName) {
+      $("room-title").textContent = hostName ? `Joined ${hostName}'s room` : "Joined room";
       $("room-status").textContent = "Connected!";
       $("room-status").classList.add("ok");
       renderSettingsList(settings);
@@ -69,15 +69,20 @@ const UI = (() => {
     });
   });
 
+  function myName() {
+    return ($("player-name").value.trim() || "Player").slice(0, 14);
+  }
+
   /* ---------- network events ---------- */
   Net.on("message", (msg) => Match.onMessage(msg));
 
   Net.on("connected", () => {
+    Match.setMyName(myName());
     if (Net.isHost) {
       $("room-status").textContent = "Friend connected!";
       $("room-status").classList.add("ok");
       $("btn-start").hidden = false;
-      Match.hostHello({ ...chosen });
+      Match.hostHello({ ...chosen }, myName());
     }
   });
 

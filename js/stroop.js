@@ -28,6 +28,7 @@ const Stroop = (() => {
   let rng = null;
   let colors = [];          // active subset of PALETTE
   let trapRate = 0.75;
+  let order = [];            // shuffled color indices → button positions
   let current = null;        // { word, inkIndex }
   let score = 0;
   let running = false;
@@ -46,7 +47,19 @@ const Stroop = (() => {
     el.keysHint = document.getElementById("keys-hint");
   }
 
+  /* seeded Fisher–Yates — both players shuffle identically */
+  function shuffleOrder() {
+    order = colors.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+  }
+
   function nextPrompt() {
+    // new random button layout every prompt
+    shuffleOrder();
+    buildButtons();
     // pick ink color
     const inkIndex = Math.floor(rng() * colors.length);
     // trap: word meaning differs from ink; otherwise they match
@@ -64,14 +77,15 @@ const Stroop = (() => {
     el.word.classList.add("pop");
   }
 
-  function answer(index) {
+  /* pos = position of the clicked button; order[pos] = actual color index */
+  function answer(pos) {
     if (!running || current === null) return;
-    if (index >= colors.length) return;
-    if (index === current.inkIndex) {
+    if (pos >= order.length) return;
+    if (order[pos] === current.inkIndex) {
       score += 10;
     } else {
       score -= 5;
-      const btn = el.buttons.children[index];
+      const btn = el.buttons.children[pos];
       if (btn) {
         btn.classList.remove("flash-wrong");
         void btn.offsetWidth;
@@ -85,16 +99,19 @@ const Stroop = (() => {
 
   function buildButtons() {
     el.buttons.innerHTML = "";
-    colors.forEach((c, i) => {
+    // symmetric rows: 4 → 4 · 6 → 3+3 · 8 → 4+4
+    const perRow = colors.length === 6 ? 3 : Math.min(colors.length, 4);
+    el.buttons.style.setProperty("--btn-w", perRow === 3 ? "31%" : "23%");
+    order.forEach((colorIdx, pos) => {
+      const c = colors[colorIdx];
       const b = document.createElement("button");
       b.className = "color-btn";
       b.style.background = c.css;
-      b.innerHTML = `<span class="key">${i + 1}</span>`;
+      b.innerHTML = `<span class="key">${pos + 1}</span>`;
       b.setAttribute("aria-label", c.name);
-      b.addEventListener("click", () => answer(i));
+      b.addEventListener("click", () => answer(pos));
       el.buttons.appendChild(b);
     });
-    el.buttons.style.gridTemplateColumns = `repeat(${Math.min(colors.length, 4)}, 1fr)`;
     el.keysHint.textContent = `Press 1–${colors.length} or click`;
   }
 
@@ -133,7 +150,6 @@ const Stroop = (() => {
       score = 0;
       cb = { onScore, onEnd };
 
-      buildButtons();
       el.myScore.textContent = "0";
       el.word.hidden = false;
 
