@@ -52,6 +52,9 @@ const Match = (() => {
     $("opp-score").textContent = "0";
     $("opp-status").innerHTML = `<span class="dot live"></span> playing`;
     $("my-score").textContent = "0";
+    const scareBtn = $("btn-scare");
+    scareBtn.disabled = false;
+    scareBtn.textContent = "👻 Scare them";
     $("timer").textContent = settings.duration.toFixed(1);
     $("timer-fill").style.width = "100%";
     updateMatchScoreUI();
@@ -184,7 +187,66 @@ const Match = (() => {
         baseSeed = msg.baseSeed;
         beginMatch();
         break;
+
+      case "scare":
+        playScare();
+        break;
     }
+  }
+
+  /* ---------- jumpscare (received from opponent) ---------- */
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  }
+
+  function scareSound() {
+    ensureAudio();
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.5, now);
+    master.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
+    master.connect(audioCtx.destination);
+
+    // harsh descending scream (two detuned sawtooths)
+    [640, 655].forEach((f) => {
+      const o = audioCtx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f, now);
+      o.frequency.exponentialRampToValueAtTime(90, now + 1.0);
+      o.connect(master);
+      o.start(now);
+      o.stop(now + 1.1);
+    });
+
+    // white-noise burst for the impact
+    const len = audioCtx.sampleRate * 0.4;
+    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buf;
+    const ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.6, now);
+    noise.connect(ng); ng.connect(master);
+    noise.start(now);
+  }
+
+  function playScare() {
+    const ov = $("scare-overlay");
+    ov.hidden = false;
+    document.body.classList.remove("shaking");
+    void document.body.offsetWidth;
+    document.body.classList.add("shaking");
+    scareSound();
+    setTimeout(() => {
+      ov.hidden = true;
+      document.body.classList.remove("shaking");
+    }, 1300);
   }
 
   function tryRematch() {
@@ -223,6 +285,16 @@ const Match = (() => {
       Net.send({ type: "rematch_req" });
       tryRematch();
     },
+
+    sendScare() {
+      const btn = $("btn-scare");
+      if (btn.disabled || !active) return;
+      btn.disabled = true;
+      btn.textContent = "👻 Used";
+      Net.send({ type: "scare" });
+    },
+
+    ensureAudio,
 
     abort() { Stroop.abort(); active = false; },
     get isActive() { return active; },
