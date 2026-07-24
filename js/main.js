@@ -170,8 +170,6 @@ const UI = (() => {
 
   /* ---------- jumpscare ---------- */
   $("btn-scare").addEventListener("click", () => Match.sendScare());
-  // browsers only allow sound after a user gesture — unlock on first click anywhere
-  document.addEventListener("click", () => Match.ensureAudio(), { once: true });
 
   /* ---------- admin mode ---------- */
   window.AppState = { admin: false };

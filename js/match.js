@@ -196,108 +196,64 @@ const Match = (() => {
   }
 
   /* ---------- jumpscare (received from opponent) ---------- */
-  /* Custom scare: put your own image at assets/scare.png (or .gif/.jpg/.webp)
-     and sound at assets/scare.mp3 — used automatically. Without them, the
-     built-in SVG face + synth scream is used. */
+  /* Uses ONLY your files in assets/: scare.png (or .gif/.jpg/.webp)
+     + scare.mp3. No built-in fallback. Cache-busted on every load. */
   const SCARE_IMAGES = ["assets/scare.png", "assets/scare.gif", "assets/scare.jpg", "assets/scare.webp"];
   const SCARE_SOUND = "assets/scare.mp3";
-  const BUST = "?v=" + Date.now(); // force fresh fetch — replaced files show up immediately
+  const BUST = "?v=" + Date.now();
   let customImgSrc = null;
-  let customAudio = null;
+  let scareAudio = null;
 
-  (function probeCustomAssets() {
-    // try each image name; keep the first that loads
+  (function preloadScareAssets() {
     SCARE_IMAGES.forEach((src) => {
       const img = new Image();
       img.onload = () => { if (!customImgSrc) customImgSrc = src + BUST; };
       img.src = src + BUST;
     });
-    const a = new Audio();
-    a.oncanplaythrough = () => { customAudio = a; };
-    a.onerror = () => { customAudio = null; };
-    a.preload = "auto";
-    a.src = SCARE_SOUND + BUST;
+    scareAudio = new Audio(SCARE_SOUND + BUST);
+    scareAudio.preload = "auto";
+    scareAudio.onerror = () => {
+      console.warn("Stroop Duel: assets/scare.mp3 not found or failed to load.");
+      scareAudio = null;
+    };
   })();
 
-  let audioCtx = null;
-  function ensureAudio() {
-    if (!audioCtx) {
-      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-    }
-    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
-  }
+  let scareEndTimer = null;
 
-  function scareSound() {
-    ensureAudio();
-    if (!audioCtx) return;
-    const now = audioCtx.currentTime;
-    const master = audioCtx.createGain();
-    master.gain.setValueAtTime(0.5, now);
-    master.gain.exponentialRampToValueAtTime(0.001, now + 1.1);
-    master.connect(audioCtx.destination);
-
-    // harsh descending scream (two detuned sawtooths)
-    [640, 655].forEach((f) => {
-      const o = audioCtx.createOscillator();
-      o.type = "sawtooth";
-      o.frequency.setValueAtTime(f, now);
-      o.frequency.exponentialRampToValueAtTime(90, now + 1.0);
-      o.connect(master);
-      o.start(now);
-      o.stop(now + 1.1);
-    });
-
-    // white-noise burst for the impact
-    const len = audioCtx.sampleRate * 0.4;
-    const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const noise = audioCtx.createBufferSource();
-    noise.buffer = buf;
-    const ng = audioCtx.createGain();
-    ng.gain.setValueAtTime(0.6, now);
-    noise.connect(ng); ng.connect(master);
-    noise.start(now);
+  function endScare() {
+    clearTimeout(scareEndTimer);
+    $("scare-overlay").hidden = true;
+    document.body.classList.remove("shaking");
+    if (scareAudio) scareAudio.pause();
   }
 
   function playScare() {
     const ov = $("scare-overlay");
     const face = ov.querySelector(".scare-face");
 
-    // custom image: sudden frozen frame covering the entire screen
-    if (customImgSrc) {
-      ov.classList.add("fullimg");
-      face.innerHTML = `<img src="${customImgSrc}" alt="">`;
-    } else {
-      ov.classList.remove("fullimg");
-    }
+    // fullscreen frozen frame (blank black screen if the image file is missing)
+    face.innerHTML = customImgSrc ? `<img src="${customImgSrc}" alt="">` : "";
+    if (!customImgSrc) console.warn("Stroop Duel: no scare image found in assets/ (scare.png/.gif/.jpg/.webp).");
 
     ov.hidden = false;
     document.body.classList.remove("shaking");
     void document.body.offsetWidth;
     document.body.classList.add("shaking");
 
-    // duration: full length of the custom sound, else the built-in ~1.3s
-    let duration = 1300;
-    if (customAudio) {
-      customAudio.currentTime = 0;
-      customAudio.volume = 0.8;
-      customAudio.play().catch(() => scareSound());
-      if (isFinite(customAudio.duration) && customAudio.duration > 0) {
-        duration = Math.ceil(customAudio.duration * 1000);
-      } else {
-        duration = 3000; // metadata not ready yet — reasonable fallback
-      }
-    } else {
-      scareSound();
-      if (customImgSrc) duration = 2000;
-    }
+    clearTimeout(scareEndTimer);
 
-    setTimeout(() => {
-      ov.hidden = true;
-      document.body.classList.remove("shaking");
-      if (customAudio) customAudio.pause();
-    }, duration);
+    if (scareAudio) {
+      scareAudio.currentTime = 0;
+      scareAudio.volume = 0.8;
+      scareAudio.onended = endScare; // overlay lasts exactly as long as the mp3
+      scareAudio.play().then(() => {
+        scareEndTimer = setTimeout(endScare, 30000); // safety net (30s max)
+      }).catch(() => {
+        scareEndTimer = setTimeout(endScare, 2500); // playback blocked — image only
+      });
+    } else {
+      scareEndTimer = setTimeout(endScare, 2500); // no sound file — image only
+    }
   }
 
   function tryRematch() {
@@ -345,7 +301,6 @@ const Match = (() => {
       Net.send({ type: "scare" });
     },
 
-    ensureAudio,
 
     abort() { Stroop.abort(); active = false; },
     get isActive() { return active; },
