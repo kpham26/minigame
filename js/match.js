@@ -201,6 +201,7 @@ const Match = (() => {
      built-in SVG face + synth scream is used. */
   const SCARE_IMAGES = ["assets/scare.png", "assets/scare.gif", "assets/scare.jpg", "assets/scare.webp"];
   const SCARE_SOUND = "assets/scare.mp3";
+  const BUST = "?v=" + Date.now(); // force fresh fetch — replaced files show up immediately
   let customImgSrc = null;
   let customAudio = null;
 
@@ -208,14 +209,14 @@ const Match = (() => {
     // try each image name; keep the first that loads
     SCARE_IMAGES.forEach((src) => {
       const img = new Image();
-      img.onload = () => { if (!customImgSrc) customImgSrc = src; };
-      img.src = src;
+      img.onload = () => { if (!customImgSrc) customImgSrc = src + BUST; };
+      img.src = src + BUST;
     });
     const a = new Audio();
     a.oncanplaythrough = () => { customAudio = a; };
     a.onerror = () => { customAudio = null; };
     a.preload = "auto";
-    a.src = SCARE_SOUND;
+    a.src = SCARE_SOUND + BUST;
   })();
 
   let audioCtx = null;
