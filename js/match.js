@@ -1,0 +1,218 @@
+/* ============================================================
+   match.js — the 1v1 protocol: rounds, seeds, live status,
+   round results, first-to-N, rematch.
+
+   Message types over the wire:
+     hello        {settings}                      host → joiner on connect
+     round_start  {round, seed}                   host → joiner
+     status       {score}                         both, throttled
+     finished     {round, score}                  both
+     rematch_req  {}                              either
+     rematch_go   {baseSeed}                      host → joiner
+   ============================================================ */
+const Match = (() => {
+  let settings = null;
+  let baseSeed = 0;
+  let round = 0;
+  let myWins = 0, oppWins = 0;
+  let myFinal = null, oppFinal = null;
+  let iFinished = false, oppFinished = false;
+  let lastStatusSent = 0;
+  let rematchMe = false, rematchOpp = false;
+  let active = false;
+
+  const $ = (id) => document.getElementById(id);
+
+  function roundSeed(r) {
+    // derive per-round seed deterministically from the base seed
+    return (baseSeed + r * 7919) >>> 0;
+  }
+
+  function updateMatchScoreUI() {
+    $("match-score").textContent = `${myWins} – ${oppWins}`;
+  }
+
+  function resetRoundFlags() {
+    myFinal = null; oppFinal = null;
+    iFinished = false; oppFinished = false;
+  }
+
+  function startRound(r) {
+    round = r;
+    resetRoundFlags();
+    active = true;
+
+    UI.showScreen("screen-game");
+    $("overlay-round").hidden = true;
+    $("overlay-end").hidden = true;
+    $("round-label").textContent = `ROUND ${round}`;
+    $("opp-score").textContent = "0";
+    $("opp-status").innerHTML = `<span class="dot live"></span> playing`;
+    $("my-score").textContent = "0";
+    $("timer").textContent = settings.duration.toFixed(1);
+    $("timer-fill").style.width = "100%";
+    updateMatchScoreUI();
+
+    // 3-2-1 countdown, then play
+    const cd = $("countdown");
+    const word = $("stroop-word");
+    word.hidden = true;
+    $("round-msg").hidden = true;
+    cd.hidden = false;
+    let n = 3;
+    cd.textContent = n;
+    const iv = setInterval(() => {
+      n--;
+      if (n > 0) { cd.textContent = n; return; }
+      clearInterval(iv);
+      cd.hidden = true;
+      Stroop.start(settings, roundSeed(round), onMyScore, onMyRoundEnd);
+    }, 800);
+  }
+
+  function onMyScore(score) {
+    const now = performance.now();
+    if (now - lastStatusSent > 250) {
+      lastStatusSent = now;
+      Net.send({ type: "status", score });
+    }
+  }
+
+  function onMyRoundEnd(finalScore) {
+    myFinal = finalScore;
+    iFinished = true;
+    Net.send({ type: "status", score: finalScore }); // final flush
+    Net.send({ type: "finished", round, score: finalScore });
+    $("stroop-word").hidden = true;
+    const msg = $("round-msg");
+    msg.hidden = false;
+    msg.textContent = oppFinished ? "" : "Time! Waiting for opponent…";
+    maybeResolveRound();
+  }
+
+  function maybeResolveRound() {
+    if (!iFinished || !oppFinished || myFinal === null || oppFinal === null) return;
+
+    let title;
+    if (myFinal > oppFinal) { myWins++; title = "You take the round! 🎉"; }
+    else if (oppFinal > myFinal) { oppWins++; title = "Opponent takes the round"; }
+    else { title = "Round tied — no point"; }
+
+    updateMatchScoreUI();
+
+    // match over?
+    if (myWins >= settings.winsNeeded || oppWins >= settings.winsNeeded) {
+      showMatchEnd();
+      return;
+    }
+
+    // round result overlay, then next round
+    $("round-result-title").textContent = title;
+    $("rr-me").textContent = myFinal;
+    $("rr-opp").textContent = oppFinal;
+    $("rr-opp-name").textContent = "Them";
+    $("rr-match").textContent = `Match: ${myWins} – ${oppWins} (first to ${settings.winsNeeded})`;
+    $("overlay-round").hidden = false;
+
+    setTimeout(() => {
+      $("overlay-round").hidden = true;
+      startRound(round + 1);
+    }, 3000);
+  }
+
+  function showMatchEnd() {
+    active = false;
+    rematchMe = false; rematchOpp = false;
+    const won = myWins > oppWins;
+    const t = $("end-title");
+    t.textContent = won ? "You win! 🏆" : "You lose";
+    t.className = "end-title " + (won ? "win" : "lose");
+    $("end-detail").textContent = `Final: ${myWins} – ${oppWins}`;
+    $("rematch-status").hidden = true;
+    $("btn-rematch").disabled = false;
+    $("overlay-end").hidden = false;
+  }
+
+  function beginMatch() {
+    myWins = 0; oppWins = 0;
+    updateMatchScoreUI();
+    startRound(1);
+  }
+
+  /* ---------- incoming messages ---------- */
+  function onMessage(msg) {
+    switch (msg.type) {
+      case "hello": // joiner receives settings
+        settings = msg.settings;
+        UI.showRoomAsJoiner(settings);
+        break;
+
+      case "round_start": // joiner starts the round
+        if (!settings) return;
+        baseSeed = msg.baseSeed;
+        startRound(msg.round);
+        break;
+
+      case "status":
+        $("opp-score").textContent = msg.score;
+        break;
+
+      case "finished":
+        if (msg.round !== round) return;
+        oppFinal = msg.score;
+        oppFinished = true;
+        $("opp-status").innerHTML = `<span class="dot done"></span> finished`;
+        $("opp-score").textContent = msg.score;
+        maybeResolveRound();
+        break;
+
+      case "rematch_req":
+        rematchOpp = true;
+        tryRematch();
+        break;
+
+      case "rematch_go": // joiner side
+        baseSeed = msg.baseSeed;
+        beginMatch();
+        break;
+    }
+  }
+
+  function tryRematch() {
+    if (!Net.isHost) return; // host coordinates
+    if (rematchMe && rematchOpp) {
+      baseSeed = (Math.random() * 2 ** 31) >>> 0;
+      Net.send({ type: "rematch_go", baseSeed });
+      beginMatch();
+    }
+  }
+
+  return {
+    onMessage,
+
+    /* host presses Start match */
+    hostStart(chosenSettings) {
+      settings = chosenSettings;
+      baseSeed = (Math.random() * 2 ** 31) >>> 0;
+      Net.send({ type: "round_start", round: 1, baseSeed });
+      beginMatch();
+    },
+
+    /* host sends settings right after the joiner connects */
+    hostHello(chosenSettings) {
+      settings = chosenSettings;
+      Net.send({ type: "hello", settings });
+    },
+
+    requestRematch() {
+      rematchMe = true;
+      $("btn-rematch").disabled = true;
+      $("rematch-status").hidden = false;
+      Net.send({ type: "rematch_req" });
+      tryRematch();
+    },
+
+    abort() { Stroop.abort(); active = false; },
+    get isActive() { return active; },
+  };
+})();

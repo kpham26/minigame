@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stroop Duel — 1v1 Brain Battle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+
+<!-- ============ LOBBY ============ -->
+<section id="screen-lobby" class="screen active">
+  <div class="lobby-wrap">
+    <h1 class="logo" aria-label="Stroop Duel">
+      <span class="l c-blue">S</span><span class="l c-yellow">T</span><span class="l c-green">R</span><span class="l c-red">O</span><span class="l c-purple">O</span><span class="l c-cyan">P</span>
+      <span class="logo-duel">DUEL</span>
+    </h1>
+    <p class="tagline">Read the word. Click the color. Beat your friend.</p>
+
+    <div class="lobby-cards">
+      <!-- CREATE -->
+      <div class="card">
+        <h2>Create a room</h2>
+        <div class="settings">
+          <label class="setting">
+            <span>Colors</span>
+            <div class="seg" data-setting="colors">
+              <button data-val="4" class="on">4</button>
+              <button data-val="6">6</button>
+              <button data-val="8">8</button>
+            </div>
+          </label>
+          <label class="setting">
+            <span>Round length</span>
+            <div class="seg" data-setting="duration">
+              <button data-val="15">15s</button>
+              <button data-val="30" class="on">30s</button>
+              <button data-val="60">60s</button>
+            </div>
+          </label>
+          <label class="setting">
+            <span>First to</span>
+            <div class="seg" data-setting="winsNeeded">
+              <button data-val="1">1</button>
+              <button data-val="2">2</button>
+              <button data-val="3" class="on">3</button>
+              <button data-val="5">5</button>
+            </div>
+          </label>
+          <label class="setting">
+            <span>Trap rate</span>
+            <div class="seg" data-setting="trapRate">
+              <button data-val="0.5">Chill</button>
+              <button data-val="0.75" class="on">Classic</button>
+              <button data-val="0.9">Evil</button>
+            </div>
+          </label>
+        </div>
+        <button id="btn-create" class="btn btn-primary">Create room</button>
+      </div>
+
+      <!-- JOIN -->
+      <div class="card">
+        <h2>Join a room</h2>
+        <p class="hint">Ask your friend for their room code.</p>
+        <input id="join-code" class="code-input" type="text" maxlength="6" placeholder="A1B2C3" autocomplete="off" spellcheck="false">
+        <button id="btn-join" class="btn btn-primary">Join room</button>
+        <p id="join-error" class="error" hidden></p>
+      </div>
+    </div>
+
+    <p class="footnote">Scoring: correct <span class="pos">+10</span> · wrong <span class="neg">−5</span></p>
+  </div>
+</section>
+
+<!-- ============ ROOM / WAITING ============ -->
+<section id="screen-room" class="screen">
+  <div class="room-wrap">
+    <h2 id="room-title">Room created</h2>
+    <div id="room-code-box" class="room-code" title="Click to copy"></div>
+    <p id="room-status" class="room-status">Waiting for your friend to join…</p>
+
+    <div class="card settings-summary">
+      <h3>Room settings</h3>
+      <ul id="settings-list"></ul>
+    </div>
+
+    <button id="btn-start" class="btn btn-primary" hidden>Start match</button>
+    <p id="waiting-host" class="hint" hidden>Waiting for host to start…</p>
+    <button id="btn-leave" class="btn btn-ghost">Leave room</button>
+  </div>
+</section>
+
+<!-- ============ GAME ============ -->
+<section id="screen-game" class="screen">
+  <div class="game-layout">
+    <div class="arena">
+      <div class="arena-top">
+        <div class="round-label mono" id="round-label">ROUND 1</div>
+        <div class="timer mono" id="timer">30.0</div>
+        <div class="my-score mono" id="my-score">0</div>
+      </div>
+      <div class="timer-bar"><div id="timer-fill" class="timer-fill"></div></div>
+
+      <div id="countdown" class="countdown" hidden>3</div>
+      <div id="stroop-word" class="stroop-word" hidden>RED</div>
+      <div id="round-msg" class="round-msg" hidden></div>
+
+      <div id="color-buttons" class="color-buttons"></div>
+      <p class="keys-hint" id="keys-hint">Press 1–4 or click</p>
+    </div>
+
+    <aside class="opponent-panel">
+      <div class="vs-badge mono">VS</div>
+      <div class="opp-name" id="opp-name">Opponent</div>
+      <div class="opp-status" id="opp-status"><span class="dot live"></span> playing</div>
+      <div class="opp-score-label">score</div>
+      <div class="opp-score mono" id="opp-score">0</div>
+      <div class="match-score-box">
+        <div class="opp-score-label">match</div>
+        <div class="match-score mono" id="match-score">0 – 0</div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ ROUND RESULT OVERLAY ============ -->
+<div id="overlay-round" class="overlay" hidden>
+  <div class="overlay-card">
+    <h2 id="round-result-title">Round over</h2>
+    <div class="score-compare">
+      <div class="sc-col"><span class="sc-name">You</span><span class="sc-val mono" id="rr-me">0</span></div>
+      <div class="sc-vs mono">–</div>
+      <div class="sc-col"><span class="sc-name" id="rr-opp-name">Them</span><span class="sc-val mono" id="rr-opp">0</span></div>
+    </div>
+    <p id="rr-match" class="rr-match mono"></p>
+    <p class="hint" id="rr-next">Next round starting…</p>
+  </div>
+</div>
+
+<!-- ============ MATCH END OVERLAY ============ -->
+<div id="overlay-end" class="overlay" hidden>
+  <div class="overlay-card">
+    <h2 id="end-title" class="end-title">You win!</h2>
+    <p id="end-detail" class="rr-match mono"></p>
+    <button id="btn-rematch" class="btn btn-primary">Rematch</button>
+    <p id="rematch-status" class="hint" hidden>Waiting for opponent…</p>
+    <button id="btn-exit" class="btn btn-ghost">Back to lobby</button>
+  </div>
+</div>
+
+<!-- ============ DISCONNECT OVERLAY ============ -->
+<div id="overlay-dc" class="overlay" hidden>
+  <div class="overlay-card">
+    <h2>Opponent disconnected</h2>
+    <p class="hint">The connection to your friend was lost.</p>
+    <button id="btn-dc-exit" class="btn btn-primary">Back to lobby</button>
+  </div>
+</div>
+
+<script src="js/network.js"></script>
+<script src="js/stroop.js"></script>
+<script src="js/match.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
