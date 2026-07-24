@@ -196,25 +196,21 @@ const Match = (() => {
   }
 
   /* ---------- jumpscare (received from opponent) ---------- */
-  /* Uses ONLY your files in assets/: scare.png (or .gif/.jpg/.webp)
-     + scare.mp3. No built-in fallback. Cache-busted on every load. */
-  const SCARE_IMAGES = ["assets/scare.png", "assets/scare.gif", "assets/scare.jpg", "assets/scare.webp"];
-  const SCARE_SOUND = "assets/scare.mp3";
+  /* Plays ONE video: assets/scare.mp4 — its own audio, its own duration.
+     Cache-busted on every load so replaced files show up immediately. */
+  const SCARE_VIDEO = "assets/scare.mp4";
   const BUST = "?v=" + Date.now();
-  let customImgSrc = null;
-  let scareAudio = null;
+  let scareReady = false;
 
-  (function preloadScareAssets() {
-    SCARE_IMAGES.forEach((src) => {
-      const img = new Image();
-      img.onload = () => { if (!customImgSrc) customImgSrc = src + BUST; };
-      img.src = src + BUST;
-    });
-    scareAudio = new Audio(SCARE_SOUND + BUST);
-    scareAudio.preload = "auto";
-    scareAudio.onerror = () => {
-      console.warn("Stroop Duel: assets/scare.mp3 not found or failed to load.");
-      scareAudio = null;
+  (function preloadScareVideo() {
+    const v = document.getElementById("scare-video");
+    if (!v) return;
+    v.src = SCARE_VIDEO + BUST;
+    v.load();
+    v.oncanplaythrough = () => { scareReady = true; };
+    v.onerror = () => {
+      scareReady = false;
+      console.warn("Stroop Duel: assets/scare.mp4 not found or failed to load.");
     };
   })();
 
@@ -222,18 +218,16 @@ const Match = (() => {
 
   function endScare() {
     clearTimeout(scareEndTimer);
+    const v = $("scare-video");
     $("scare-overlay").hidden = true;
     document.body.classList.remove("shaking");
-    if (scareAudio) scareAudio.pause();
+    if (v) { v.pause(); v.currentTime = 0; }
   }
 
   function playScare() {
     const ov = $("scare-overlay");
-    const face = ov.querySelector(".scare-face");
-
-    // fullscreen frozen frame (blank black screen if the image file is missing)
-    face.innerHTML = customImgSrc ? `<img src="${customImgSrc}" alt="">` : "";
-    if (!customImgSrc) console.warn("Stroop Duel: no scare image found in assets/ (scare.png/.gif/.jpg/.webp).");
+    const v = $("scare-video");
+    if (!v) return;
 
     ov.hidden = false;
     document.body.classList.remove("shaking");
@@ -242,18 +236,21 @@ const Match = (() => {
 
     clearTimeout(scareEndTimer);
 
-    if (scareAudio) {
-      scareAudio.currentTime = 0;
-      scareAudio.volume = 0.8;
-      scareAudio.onended = endScare; // overlay lasts exactly as long as the mp3
-      scareAudio.play().then(() => {
-        scareEndTimer = setTimeout(endScare, 30000); // safety net (30s max)
-      }).catch(() => {
-        scareEndTimer = setTimeout(endScare, 2500); // playback blocked — image only
-      });
-    } else {
-      scareEndTimer = setTimeout(endScare, 2500); // no sound file — image only
-    }
+    v.currentTime = 0;
+    v.muted = false;
+    v.volume = 1.0;
+    v.onended = endScare; // overlay lasts exactly as long as the video
+
+    v.play().then(() => {
+      // safety net in case 'ended' never fires
+      const dur = isFinite(v.duration) && v.duration > 0 ? v.duration * 1000 + 500 : 30000;
+      scareEndTimer = setTimeout(endScare, dur);
+    }).catch(() => {
+      // sound blocked by the browser — replay muted so the visual still lands
+      v.muted = true;
+      v.play().catch(() => {});
+      scareEndTimer = setTimeout(endScare, 3000);
+    });
   }
 
   function tryRematch() {

@@ -1,1 +1,1 @@
-Drop scare.png (or .gif/.jpg/.webp) and scare.mp3 here to customize the jumpscare. Delete them to go back to the built-in scare.
+Drop scare.mp4 here — the jumpscare plays this video (with its own audio) for its full duration.
