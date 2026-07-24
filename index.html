@@ -14,6 +14,7 @@
 
 <!-- ============ LOBBY ============ -->
 <section id="screen-lobby" class="screen active">
+  <button id="btn-admin" class="admin-btn" title="Admin">⚙</button>
   <div class="lobby-wrap">
     <h1 class="logo" aria-label="Stroop Duel">
       <span class="l c-blue">S</span><span class="l c-yellow">T</span><span class="l c-green">R</span><span class="l c-red">O</span><span class="l c-purple">O</span><span class="l c-cyan">P</span>
@@ -129,10 +130,23 @@
         <div class="opp-score-label">match</div>
         <div class="match-score mono" id="match-score">0 – 0</div>
       </div>
-      <button id="btn-scare" class="btn-scare" title="One use per round">👻 Scare them</button>
+      <button id="btn-scare" class="btn-scare" title="One use per round" hidden>👻 Scare them</button>
+      <button id="btn-leave-game" class="btn-ghost btn-leave-game">Leave match</button>
     </aside>
   </div>
 </section>
+
+<!-- ============ ADMIN OVERLAY ============ -->
+<div id="overlay-admin" class="overlay" hidden>
+  <div class="overlay-card">
+    <h2>Admin mode</h2>
+    <p class="hint">Enter the admin password.</p>
+    <input id="admin-pass" class="code-input admin-pass" type="password" placeholder="••••••••" autocomplete="off">
+    <button id="btn-admin-submit" class="btn btn-primary">Unlock</button>
+    <p id="admin-error" class="error" hidden>Wrong password.</p>
+    <button id="btn-admin-cancel" class="btn btn-ghost">Cancel</button>
+  </div>
+</div>
 
 <!-- ============ JUMPSCARE ============ -->
 <div id="scare-overlay" class="scare-overlay" hidden>

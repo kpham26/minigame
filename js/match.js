@@ -53,6 +53,7 @@ const Match = (() => {
     $("opp-status").innerHTML = `<span class="dot live"></span> playing`;
     $("my-score").textContent = "0";
     const scareBtn = $("btn-scare");
+    scareBtn.hidden = !(window.AppState && window.AppState.admin);
     scareBtn.disabled = false;
     scareBtn.textContent = "👻 Scare them";
     $("timer").textContent = settings.duration.toFixed(1);
@@ -195,6 +196,28 @@ const Match = (() => {
   }
 
   /* ---------- jumpscare (received from opponent) ---------- */
+  /* Custom scare: put your own image at assets/scare.png (or .gif/.jpg/.webp)
+     and sound at assets/scare.mp3 — used automatically. Without them, the
+     built-in SVG face + synth scream is used. */
+  const SCARE_IMAGES = ["assets/scare.png", "assets/scare.gif", "assets/scare.jpg", "assets/scare.webp"];
+  const SCARE_SOUND = "assets/scare.mp3";
+  let customImgSrc = null;
+  let customAudio = null;
+
+  (function probeCustomAssets() {
+    // try each image name; keep the first that loads
+    SCARE_IMAGES.forEach((src) => {
+      const img = new Image();
+      img.onload = () => { if (!customImgSrc) customImgSrc = src; };
+      img.src = src;
+    });
+    const a = new Audio();
+    a.oncanplaythrough = () => { customAudio = a; };
+    a.onerror = () => { customAudio = null; };
+    a.preload = "auto";
+    a.src = SCARE_SOUND;
+  })();
+
   let audioCtx = null;
   function ensureAudio() {
     if (!audioCtx) {
@@ -238,15 +261,42 @@ const Match = (() => {
 
   function playScare() {
     const ov = $("scare-overlay");
+    const face = ov.querySelector(".scare-face");
+
+    // custom image: sudden frozen frame covering the entire screen
+    if (customImgSrc) {
+      ov.classList.add("fullimg");
+      face.innerHTML = `<img src="${customImgSrc}" alt="">`;
+    } else {
+      ov.classList.remove("fullimg");
+    }
+
     ov.hidden = false;
     document.body.classList.remove("shaking");
     void document.body.offsetWidth;
     document.body.classList.add("shaking");
-    scareSound();
+
+    // duration: full length of the custom sound, else the built-in ~1.3s
+    let duration = 1300;
+    if (customAudio) {
+      customAudio.currentTime = 0;
+      customAudio.volume = 0.8;
+      customAudio.play().catch(() => scareSound());
+      if (isFinite(customAudio.duration) && customAudio.duration > 0) {
+        duration = Math.ceil(customAudio.duration * 1000);
+      } else {
+        duration = 3000; // metadata not ready yet — reasonable fallback
+      }
+    } else {
+      scareSound();
+      if (customImgSrc) duration = 2000;
+    }
+
     setTimeout(() => {
       ov.hidden = true;
       document.body.classList.remove("shaking");
-    }, 1300);
+      if (customAudio) customAudio.pause();
+    }, duration);
   }
 
   function tryRematch() {

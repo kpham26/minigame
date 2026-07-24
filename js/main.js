@@ -172,4 +172,88 @@ const UI = (() => {
   $("btn-scare").addEventListener("click", () => Match.sendScare());
   // browsers only allow sound after a user gesture — unlock on first click anywhere
   document.addEventListener("click", () => Match.ensureAudio(), { once: true });
+
+  /* ---------- admin mode ---------- */
+  window.AppState = { admin: false };
+  const ADMIN_PASS = "chicken123";
+
+  try {
+    if (localStorage.getItem("sd-admin") === "1") {
+      window.AppState.admin = true;
+      $("btn-admin").classList.add("on");
+    }
+  } catch (e) {}
+
+  $("btn-admin").addEventListener("click", () => {
+    if (window.AppState.admin) {
+      // toggle off
+      window.AppState.admin = false;
+      $("btn-admin").classList.remove("on");
+      try { localStorage.removeItem("sd-admin"); } catch (e) {}
+      return;
+    }
+    $("admin-pass").value = "";
+    $("admin-error").hidden = true;
+    $("overlay-admin").hidden = false;
+    $("admin-pass").focus();
+  });
+
+  function tryAdminUnlock() {
+    if ($("admin-pass").value === ADMIN_PASS) {
+      window.AppState.admin = true;
+      $("btn-admin").classList.add("on");
+      try { localStorage.setItem("sd-admin", "1"); } catch (e) {}
+      $("overlay-admin").hidden = true;
+    } else {
+      $("admin-error").hidden = false;
+      $("admin-pass").value = "";
+    }
+  }
+  $("btn-admin-submit").addEventListener("click", tryAdminUnlock);
+  $("admin-pass").addEventListener("keydown", (e) => { if (e.key === "Enter") tryAdminUnlock(); });
+  $("btn-admin-cancel").addEventListener("click", () => { $("overlay-admin").hidden = true; });
+
+  /* ---------- leave match during game ---------- */
+  $("btn-leave-game").addEventListener("click", () => {
+    Match.abort();
+    Net.leave();
+    location.reload();
+  });
+
+  /* ---------- UI sounds (click + hover) ---------- */
+  const Sfx = (() => {
+    let ctx = null;
+    function ensure() {
+      if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+      if (ctx && ctx.state === "suspended") ctx.resume();
+      return ctx;
+    }
+    function blip(freq, vol, dur) {
+      const c = ensure();
+      if (!c) return;
+      const now = c.currentTime;
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(freq, now);
+      g.gain.setValueAtTime(vol, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(now); o.stop(now + dur);
+    }
+    return {
+      click() { blip(520, 0.12, 0.09); },
+      hover() { blip(760, 0.04, 0.05); },
+    };
+  })();
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("button")) Sfx.click();
+  });
+  document.addEventListener("mouseover", (e) => {
+    const btn = e.target.closest("button");
+    if (btn && !btn.disabled && (!e.relatedTarget || !e.relatedTarget.closest || e.relatedTarget.closest("button") !== btn)) {
+      Sfx.hover();
+    }
+  });
 })();
