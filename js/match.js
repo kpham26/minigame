@@ -295,10 +295,11 @@ const Match = (() => {
 
     sendScare() {
       const btn = $("btn-scare");
-      if (btn.disabled || !active) return;
-      btn.disabled = true;
-      btn.textContent = "👻 Used";
+      if (!active) return;
       Net.send({ type: "scare" });
+      // brief flash so you know it fired — but unlimited uses
+      btn.textContent = "👻 Sent!";
+      setTimeout(() => { btn.textContent = "👻 Scare them"; }, 700);
     },
 
 
